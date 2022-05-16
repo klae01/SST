@@ -7,12 +7,12 @@ from .wav2img import *
 
 
 class WAVDataset(torch.utils.data.Dataset):
-    def __init__(self, root, dtype=np.uint8, image_size=None, virtual_samplerate=48000):
+    def __init__(self, path, dtype=np.uint8, image_size=None, virtual_samplerate=48000):
         self.image_size = image_size
         nperseg = image_size * 2 - 1
         self.data = [
             wav2img(fpath, dtype, {"nperseg": nperseg}, virtual_samplerate)[0]
-            for fpath in glob.glob(f"{root}/**.wav")
+            for fpath in glob.glob(f"{path}/**.wav")
         ]
         index = [IMG.shape[1] + 1 - image_size for IMG in self.data]
         self.length = sum(index)
