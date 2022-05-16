@@ -26,3 +26,6 @@ class WAVDataset(torch.utils.data.Dataset):
         pixel_id = index - (self.index[img_id - 1] if img_id > 0 else 0)
         img = self.data[img_id][:, pixel_id : pixel_id + self.image_size]
         return img
+
+
+AudioDataset = WAVDataset
