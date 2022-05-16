@@ -9,7 +9,7 @@ def log_fit(X, dtype):
     info = np.iinfo(dtype)
     conv = np.sign(X) * np.log2(abs(X) + 1)
     conv = conv / 32
-    if 1 or conv.min() < -1 or conv.max() > 1:
+    if conv.min() < -1 or conv.max() > 1:
         warnings.warn(
             f"log_fit: The range of frequency strength [{conv.min(): .5f}, {conv.max(): .5f}] "
             + f"exceeds expectations [-1, 1]."
@@ -50,7 +50,7 @@ def img2wav(spectrogram: np.ndarray, samplerate: int, dtype: np.dtype):
     r_times, r_samples = scipy.signal.istft(spectrogram, samplerate)
 
     info = np.iinfo(np.int32)
-    if 1 or r_samples.min() < info.min or r_samples.max() > info.max:
+    if r_samples.min() < info.min or r_samples.max() > info.max:
         warnings.warn(
             f"img2wav: The range of sampling [{r_samples.min(): .5f}, {r_samples.max(): .5f}] "
             + f"exceeds expectations [{info.min}, {info.max}]."
