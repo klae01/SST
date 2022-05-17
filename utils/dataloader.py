@@ -33,7 +33,7 @@ class WAVDataset(torch.utils.data.Dataset):
             data_config = {
                 "use_numpy": False,
                 "dtype": "torch.BFloat16Tensor",
-                "device": "gpu",
+                "device": "cuda",
                 "axis": -1,
             }
 
@@ -42,6 +42,7 @@ class WAVDataset(torch.utils.data.Dataset):
         """
         assert not data_config["use_numpy"] or data_config["device"] is None
 
+        self.data_config = data_config
         self.image_size = image_size
         nperseg = image_size * 2 - 1
         self.data = [
@@ -52,13 +53,13 @@ class WAVDataset(torch.utils.data.Dataset):
         self.length = sum(index)
         self.index = np.cumsum(index, axis=0)
 
+        axis = [1, 0, 2]
         if data_config["axis"] not in [-1, 2]:
-            axis = list(range(3))
             axis = axis[: data_config["axis"]] + [2] + axis[data_config["axis"] : -1]
-            self.data = [x.transpose(*axis) for x in self.data]
-            self.joined_axis = 2
-        else:
-            self.joined_axis = 1
+        self.data = [x.transpose(*axis) for x in self.data]
+        self.joined_axis = [i for i, I in enumerate(axis) if I == 1][0]
+        self.swap_axis = [0, 1, 2]
+        self.swap_axis.pop(data_config["axis"])
         self.data = np.concatenate(self.data, axis=self.joined_axis)
 
         if data_config["use_numpy"]:
@@ -78,10 +79,15 @@ class WAVDataset(torch.utils.data.Dataset):
         # pixel_id = index - (self.index[img_id - 1] if img_id > 0 else 0)
         pixel_id = index + (self.image_size - 1) * img_id
 
-        if self.joined_axis == 2:
-            img = self.data[:, :, pixel_id : pixel_id + self.image_size]
-        elif self.joined_axis == 1:
+        if self.joined_axis == 1:
             img = self.data[:, pixel_id : pixel_id + self.image_size]
+        elif self.joined_axis == 0:
+            img = self.data[pixel_id : pixel_id + self.image_size]
+
+        if self.data_config["use_numpy"]:
+            img = img.swapaxes(*self.swap_axis)
+        else:
+            img = img.transpose(*self.swap_axis)
         return img
 
 
