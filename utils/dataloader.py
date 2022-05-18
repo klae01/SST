@@ -2,6 +2,7 @@ import glob
 
 import numpy as np
 import torch
+from typing import Callable
 
 from .wav2img import *
 
@@ -13,6 +14,7 @@ class WAVDataset(torch.utils.data.Dataset):
         dtype: np.dtype = np.uint8,
         image_size: int = 512,
         virtual_samplerate: int = 48000,
+        transform: Callable = None,
         data_config: dict = {
             "use_numpy": True,
             "dtype": "uint8",
@@ -27,6 +29,7 @@ class WAVDataset(torch.utils.data.Dataset):
             dtype (np.dtype, optional): dtype of array of sound. Defaults to np.uint8.
             image_size (int, optional): image size of sound. Defaults to 512.
             virtual_samplerate (int, optional): Normalize wav file sample rate. Defaults to 48000.
+            transform (Callable, optional): A function for change value of data. Defaults to None.
             data_config (_type_, optional): Configuration of how data is stored and returned. Defaults to { "use_numpy": True, "dtype": "uint8", "device": None, "axis": -1, }.
 
         To return in torch **bfloat16** tensor format and preload on gpu:
@@ -37,8 +40,11 @@ class WAVDataset(torch.utils.data.Dataset):
                 "axis": -1,
             }
 
-        information about multiple dtypes:
+        Available dtypes:
             https://pytorch.org/docs/stable/tensors.html
+
+        Available device names:
+            https://github.com/pytorch/pytorch/blob/7b8cf1f7366bff95e9954037a58a8bb0edaaebd3/c10/core/Device.cpp#L52
         """
         assert not data_config["use_numpy"] or data_config["device"] is None
 
@@ -69,6 +75,9 @@ class WAVDataset(torch.utils.data.Dataset):
 
         if data_config["device"] is not None:
             self.data = self.data.to(data_config["device"])
+        
+        if transform is not None:
+            self.data = transform(self.data)
 
     def __len__(self):
         return self.length
