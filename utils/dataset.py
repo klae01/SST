@@ -11,11 +11,10 @@ class WAVDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         path: str,
-        dtype: np.dtype = np.uint8,
         image_size: int = 512,
         virtual_samplerate: int = 48000,
         transform: Callable = None,
-        data_config: dict = {
+        serve_config: dict = {
             "use_numpy": True,
             "dtype": "uint8",
             "device": None,
@@ -26,14 +25,13 @@ class WAVDataset(torch.utils.data.Dataset):
 
         Args:
             path (str): path to get .wav files
-            dtype (np.dtype, optional): dtype of array of sound. Defaults to np.uint8.
             image_size (int, optional): image size of sound. Defaults to 512.
             virtual_samplerate (int, optional): Normalize wav file sample rate. Defaults to 48000.
             transform (Callable, optional): A function for change value of data. Defaults to None.
-            data_config (_type_, optional): Configuration of how data is stored and returned. Defaults to { "use_numpy": True, "dtype": "uint8", "device": None, "axis": -1, }.
+            serve_config (_type_, optional): Configuration of how return item. Defaults to { "use_numpy": True, "dtype": "uint8", "device": None, "axis": -1, }.
 
         To return in torch **bfloat16** tensor format and preload on gpu:
-            data_config = {
+            serve_config = {
                 "use_numpy": False,
                 "dtype": "torch.BFloat16Tensor",
                 "device": "cuda",
@@ -46,36 +44,36 @@ class WAVDataset(torch.utils.data.Dataset):
         Available device names:
             https://github.com/pytorch/pytorch/blob/7b8cf1f7366bff95e9954037a58a8bb0edaaebd3/c10/core/Device.cpp#L52
         """
-        assert not data_config["use_numpy"] or data_config["device"] is None
+        assert not serve_config["use_numpy"] or serve_config["device"] is None
 
         self.image_size = image_size
         nperseg = image_size * 2 - 1
         self.data = [
-            wav2img(fpath, dtype, {"nperseg": nperseg}, virtual_samplerate)[0]
+            wav2pfft(fpath, virtual_samplerate, {"nperseg": nperseg})[0]
             for fpath in glob.glob(f"{path}/**.wav")
         ]
         index = [IMG.shape[1] + 1 - image_size for IMG in self.data]
         self.length = sum(index)
         self.index = np.cumsum(index, axis=0)
 
-        if data_config["axis"] not in [-1, 2]:
+        if serve_config["axis"] not in [-1, 2]:
             axis = list(range(3))
-            axis = axis[: data_config["axis"]] + [2] + axis[data_config["axis"] : -1]
+            axis = axis[: serve_config["axis"]] + [2] + axis[serve_config["axis"] : -1]
             self.data = [x.transpose(*axis) for x in self.data]
             self.joined_axis = 2
         else:
             self.joined_axis = 1
         self.data = np.concatenate(self.data, axis=self.joined_axis)
 
-        if data_config["use_numpy"]:
-            self.data = self.data.astype(data_config["dtype"])
+        if serve_config["use_numpy"]:
+            self.data = self.data.astype(serve_config["dtype"])
         else:
             self.data = torch.from_numpy(self.data)
-            self.data = self.data.type(data_config["dtype"])
+            self.data = self.data.type(serve_config["dtype"])
 
-        if data_config["device"] is not None:
-            self.data = self.data.to(data_config["device"])
-        
+        if serve_config["device"] is not None:
+            self.data = self.data.to(serve_config["device"])
+
         if transform is not None:
             self.data = transform(self.data)
 
