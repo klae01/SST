@@ -1,11 +1,11 @@
 import functools
 import warnings
 
+import cv2
 import numpy as np
 import scipy.io.wavfile as wav
 import scipy.signal
 import scipy.special
-
 
 iso226_base = 40
 iso226_freq = np.array([
@@ -101,18 +101,12 @@ def pfft2img(spectrogram: np.ndarray):
     return img
 
 
-try:
-    import cv2
-
-    def limit_length_img(img):
-        assert img.dtype == np.uint8
-        IMG = img
-        IMG = np.array_split(IMG, range(2048, IMG.shape[1], 2048), axis=1)
-        LAST = np.zeros_like(IMG[0])
-        LAST[:, : IMG[-1].shape[1]] = IMG[-1][...]
-        IMG[-1] = LAST
-        IMG = np.concatenate(IMG, axis=0)
-        return IMG
-
-except:
-    ...
+def limit_length_img(img):
+    assert img.dtype == np.uint8
+    IMG = img
+    IMG = np.array_split(IMG, range(2048, IMG.shape[1], 2048), axis=1)
+    LAST = np.zeros_like(IMG[0])
+    LAST[:, : IMG[-1].shape[1]] = IMG[-1][...]
+    IMG[-1] = LAST
+    IMG = np.concatenate(IMG, axis=0)
+    return IMG
