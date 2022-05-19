@@ -88,15 +88,17 @@ def pfft2wav(spectrogram: np.ndarray, samplerate: int, dtype: np.dtype = np.int3
 
 
 def pfft2img(spectrogram: np.ndarray):
+    def as_uint8(X):
+        return np.clip(X * 255 + 0.5, 0, 255).astype(np.uint8)
+
     img = spectrogram
     scale = np.linalg.norm(img, ord=2, axis=-1)
     scale /= scale.max()
 
     rate = img / abs(img).sum(axis=-1, keepdims=True)
     img = rate * scale[..., None]
-    img = ((img + 1) / 2 * 255).astype(np.uint8)
-
-    img = np.concatenate([(scale * 255).astype(np.uint8)[..., None], img], axis=-1)
+    img = as_uint8((img + 1) / 2)
+    img = np.concatenate([as_uint8(scale)[..., None], img], axis=-1)
     img = cv2.cvtColor(img, cv2.COLOR_LAB2RGB)
     return img
 
