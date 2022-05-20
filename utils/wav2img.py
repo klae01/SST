@@ -22,7 +22,8 @@ iso226_espl = np.array([
         39.2296391 , 36.50900986, 35.60891914, 36.64917709, 40.00774113,
         45.82828132, 51.79680693, 54.28413025, 51.48590719, 99.85392334])
 
-@functools.lru_cache
+
+@functools.lru_cache(maxsize=4)
 def get_sri(frequencies):  # sound recognition intensity
     upp_index = np.minimum(
         np.searchsorted(iso226_freq, frequencies, "left"), len(iso226_freq) - 1
@@ -36,7 +37,7 @@ def get_sri(frequencies):  # sound recognition intensity
     return sri
 
 
-@functools.lru_cache
+@functools.lru_cache(maxsize=4)
 def norm_integral(p):
     # integrate Z_score(p) dp
     return -np.exp(-scipy.special.erfinv(2 * p - 1) ** 2) / (np.pi * 2) ** 0.5
@@ -46,7 +47,7 @@ def wav2pfft(
     file,
     virtual_samplerate=None,
     stft_option={"nperseg": 511},
-    normalize_target_option={"p_low": 0.075, "p_upp": 0.025},
+    normalize_target_option={"p_low": 0.075, "p_upp": 0.025, "HPI": True},
 ):
 
     assert 0 <= normalize_target_option["p_low"] <= 1
@@ -64,25 +65,39 @@ def wav2pfft(
     p_low, p_upp = [1 - normalize_target_option[x] for x in ["p_low", "p_upp"]]
     target_norm = norm_integral(p_upp) - norm_integral(p_low) / (p_upp - p_low)
 
-    power_db = (abs(spectrogram) * get_sri(tuple(frequencies))[..., None]).sum(axis=0)
-    idx_low, idx_upp = [int(len(power_db) * x) for x in [p_low, p_upp]]
-    current_norm = np.partition(power_db, [idx_low, idx_upp])[
-        idx_low : idx_upp + 1
-    ].mean(axis=-1)
+    if normalize_target_option["HPI"]:
+        spectrogram *= get_sri(tuple(frequencies))[..., None]
+        HPI = abs(spectrogram).sum(axis=0)
+    else:
+        HPI = (abs(spectrogram) * get_sri(tuple(frequencies))[..., None]).sum(axis=0)
+    idx_low, idx_upp = [int(len(HPI) * x) for x in [p_low, p_upp]]
+    current_norm = np.partition(HPI, [idx_low, idx_upp])[idx_low : idx_upp + 1].mean(
+        axis=-1
+    )
 
     spectrogram *= target_norm / current_norm  # normalize volume
     spectrogram = np.stack([spectrogram.real, spectrogram.imag], axis=-1)
     return spectrogram, samplerate
 
 
-def pfft2wav(spectrogram: np.ndarray, samplerate: int, dtype: np.dtype = np.int32):
-    # max normalied output
+def pfft2wav(
+    spectrogram: np.ndarray,
+    samplerate: int,
+    dtype: np.dtype = np.int32,
+    normalize_target_option={"AMP": 73, "HPI": True},
+):
+    # assume spectrogram is well normalize
+    # it means, overall average Human Perceptual Intensity set 0dB
+
     info = np.iinfo(dtype)
+    # spectrogram = spectrogram-spectrogram.mean(axis = (0, 1), keepdims = True)
     spectrogram = spectrogram[..., 0] + 1j * spectrogram[..., 1]
+    if normalize_target_option["HPI"]:
+        frequencies = scipy.fft.rfftfreq(spectrogram.shape[0] * 2 - 1, 1 / samplerate)
+        spectrogram /= get_sri(tuple(frequencies))[..., None]
     r_times, r_samples = scipy.signal.istft(spectrogram, samplerate)
-    data = (r_samples - r_samples.min()) / (r_samples.max() - r_samples.min())
-    data = data * (info.max - info.min) + info.min
-    data = np.clip(data, info.min, info.max)
+    r_samples *= 10 ** (normalize_target_option["AMP"] / 10)
+    data = np.clip(r_samples, info.min, info.max)
     data = data.astype(dtype)
     return data
 
@@ -91,6 +106,7 @@ def pfft2img(spectrogram: np.ndarray):
     def as_uint8(X):
         return np.clip(X * 255 + 0.5, 0, 255).astype(np.uint8)
 
+    # img = spectrogram-spectrogram.mean(axis = (0, 1), keepdims = True)
     img = spectrogram
     scale = np.linalg.norm(img, ord=2, axis=-1)
     scale /= scale.max()
