@@ -46,7 +46,7 @@ def wav2pfft(
     file,
     virtual_samplerate=None,
     stft_option={"nperseg": 511},
-    normalize_target_option={"p_low": 0.075, "p_upp": 0.025},
+    normalize_target_option={"p_low": 0.075, "p_upp": 0.025, "human_intensity": True},
 ):
 
     assert 0 <= normalize_target_option["p_low"] <= 1
@@ -64,7 +64,11 @@ def wav2pfft(
     p_low, p_upp = [1 - normalize_target_option[x] for x in ["p_low", "p_upp"]]
     target_norm = norm_integral(p_upp) - norm_integral(p_low) / (p_upp - p_low)
 
-    power_db = (abs(spectrogram) * get_sri(tuple(frequencies))[..., None]).sum(axis=0)
+    if normalize_target_option["human_intensity"]:
+        spectrogram *= get_sri(tuple(frequencies))[..., None]
+        power_db = abs(spectrogram).sum(axis=0)
+    else:
+        power_db = (abs(spectrogram) * get_sri(tuple(frequencies))[..., None]).sum(axis=0)
     idx_low, idx_upp = [int(len(power_db) * x) for x in [p_low, p_upp]]
     current_norm = np.partition(power_db, [idx_low, idx_upp])[
         idx_low : idx_upp + 1
@@ -75,10 +79,18 @@ def wav2pfft(
     return spectrogram, samplerate
 
 
-def pfft2wav(spectrogram: np.ndarray, samplerate: int, dtype: np.dtype = np.int32):
+def pfft2wav(
+    spectrogram: np.ndarray,
+    samplerate: int,
+    dtype: np.dtype = np.int32,
+    normalize_target_option = {"human_intensity": True}
+):
     # max normalied output
     info = np.iinfo(dtype)
     spectrogram = spectrogram[..., 0] + 1j * spectrogram[..., 1]
+    if normalize_target_option["human_intensity"]:
+        frequencies = scipy.fft.rfftfreq(spectrogram.shape[0] * 2 - 1, 1 / samplerate)
+        spectrogram /= get_sri(tuple(frequencies))[..., None]
     r_times, r_samples = scipy.signal.istft(spectrogram, samplerate)
     data = (r_samples - r_samples.min()) / (r_samples.max() - r_samples.min())
     data = data * (info.max - info.min) + info.min
