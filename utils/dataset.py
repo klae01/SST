@@ -54,7 +54,7 @@ class WAVDataset(torch.utils.data.Dataset):
         self.axis = axis
 
         data = [
-            wav2pfft(fpath, virtual_samplerate, {"nperseg": f_size * 2 - 1})[0]
+            wav2pfft(fpath, virtual_samplerate, nperseg=f_size * 2 - 1)[0]
             for fpath in glob.glob(f"{path}/**.wav")
         ]  # currently data have FTC format
         data = [IMG for IMG in data if IMG.shape[1] >= t_size]

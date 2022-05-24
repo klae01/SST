@@ -72,9 +72,7 @@ def wav2pfft(
     else:
         s_HPI = (abs(spectrogram) * get_sri(tuple(frequencies))[..., None]).sum(axis=0)
     idx_low, idx_upp = [int(len(s_HPI) * x) for x in [p_low, p_upp]]
-    current_norm = np.partition(s_HPI, [idx_low, idx_upp])[idx_low : idx_upp + 1].mean(
-        axis=-1
-    )
+    current_norm = np.partition(s_HPI, [idx_low, idx_upp])[idx_low : idx_upp + 1].mean()
 
     spectrogram *= target_norm / current_norm  # normalize volume
     spectrogram = np.stack([spectrogram.real, spectrogram.imag], axis=-1)
@@ -86,13 +84,21 @@ def pfft2wav(
     samplerate: int,
     dtype: np.dtype = np.int32,
     normalize_percentile: Tuple[float, float] = (0.925, 0.975),
-    Base_AMP: float = 73,
-    Max_AMP: float = 86,
+    Base_dB: float = 73,
+    Max_dB: float = 86,
     HPI: bool = True,
 ):
+    # spectrogram follows the shape [freq, time, 2]
     # assume spectrogram is well normalize to 0dB
-    # in this case it will Amplitude to {Base_AMP}dB
-    # but limit upto {Max_AMP}dB
+    # in this case it will Amplitude to {Base_dB}dB
+    # but limit upto {Max_dB}dB
+
+    assert spectrogram.shape[-1] == 2 and len(spectrogram.shape) == 3
+
+    p_low, p_upp = normalize_percentile
+    assert 0 <= p_low <= 1
+    assert 0 <= p_upp <= 1
+    target_norm = (norm_integral(p_upp) - norm_integral(p_low)) / (p_upp - p_low)
 
     spectrogram = spectrogram[..., 0] + 1j * spectrogram[..., 1]
     frequencies = scipy.fft.rfftfreq(spectrogram.shape[0] * 2 - 1, 1 / samplerate)
@@ -102,21 +108,16 @@ def pfft2wav(
     else:
         s_HPI = (abs(spectrogram) * get_sri(tuple(frequencies))[..., None]).sum(axis=0)
 
-    p_low, p_upp = normalize_percentile
-    target_norm = (norm_integral(p_upp) - norm_integral(p_low)) / (p_upp - p_low)
-
     idx_low, idx_upp = [int(len(s_HPI) * x) for x in [p_low, p_upp]]
-    current_norm = np.partition(s_HPI, [idx_low, idx_upp])[idx_low : idx_upp + 1].mean(
-        axis=-1
-    )
+    current_norm = np.partition(s_HPI, [idx_low, idx_upp])[idx_low : idx_upp + 1].mean()
 
     EXP_AMP = np.log10(current_norm / target_norm + 1e-9) * 10
-    if EXP_AMP > Max_AMP - Base_AMP:
+    if EXP_AMP > Max_dB - Base_dB:
         warnings.warn(
             f"The spectrogram has been boosted by {EXP_AMP:.2f}dB than expected."
             " Automatically adjusts the intensity."
         )
-    AMP = min(Base_AMP, Max_AMP - EXP_AMP)
+    AMP = min(Base_dB, Max_dB - EXP_AMP)
     r_times, r_samples = scipy.signal.istft(spectrogram, samplerate)
     r_samples *= 10 ** (AMP / 10)
 
