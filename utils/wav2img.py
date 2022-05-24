@@ -1,5 +1,6 @@
 import functools
 import warnings
+from typing import Tuple
 
 import cv2
 import numpy as np
@@ -46,12 +47,15 @@ def norm_integral(p):
 def wav2pfft(
     file,
     virtual_samplerate=None,
-    stft_option={"nperseg": 511},
-    normalize_target_option={"p_low": 0.075, "p_upp": 0.025, "HPI": True},
+    nperseg: int = 511,
+    normalize_percentile: Tuple[float, float] = (0.925, 0.975),
+    HPI: bool = True,
 ):
+    p_low, p_upp = normalize_percentile
+    assert 0 <= p_low <= 1
+    assert 0 <= p_upp <= 1
+    target_norm = (norm_integral(p_upp) - norm_integral(p_low)) / (p_upp - p_low)
 
-    assert 0 <= normalize_target_option["p_low"] <= 1
-    assert 0 <= normalize_target_option["p_upp"] <= 1
     samplerate, samples = wav.read(file)
     if virtual_samplerate is not None and virtual_samplerate != samplerate:
         samples = scipy.signal.resample(
@@ -59,21 +63,16 @@ def wav2pfft(
         )
         samplerate = virtual_samplerate
     frequencies, times, spectrogram = scipy.signal.stft(
-        samples, samplerate, **stft_option
+        samples, samplerate, nperseg=nperseg
     )
 
-    p_low, p_upp = [1 - normalize_target_option[x] for x in ["p_low", "p_upp"]]
-    target_norm = norm_integral(p_upp) - norm_integral(p_low) / (p_upp - p_low)
-
-    if normalize_target_option["HPI"]:
+    if HPI:
         spectrogram *= get_sri(tuple(frequencies))[..., None]
-        HPI = abs(spectrogram).sum(axis=0)
+        s_HPI = abs(spectrogram).sum(axis=0)
     else:
-        HPI = (abs(spectrogram) * get_sri(tuple(frequencies))[..., None]).sum(axis=0)
-    idx_low, idx_upp = [int(len(HPI) * x) for x in [p_low, p_upp]]
-    current_norm = np.partition(HPI, [idx_low, idx_upp])[idx_low : idx_upp + 1].mean(
-        axis=-1
-    )
+        s_HPI = (abs(spectrogram) * get_sri(tuple(frequencies))[..., None]).sum(axis=0)
+    idx_low, idx_upp = [int(len(s_HPI) * x) for x in [p_low, p_upp]]
+    current_norm = np.partition(s_HPI, [idx_low, idx_upp])[idx_low : idx_upp + 1].mean()
 
     spectrogram *= target_norm / current_norm  # normalize volume
     spectrogram = np.stack([spectrogram.real, spectrogram.imag], axis=-1)
@@ -84,19 +83,45 @@ def pfft2wav(
     spectrogram: np.ndarray,
     samplerate: int,
     dtype: np.dtype = np.int32,
-    normalize_target_option={"AMP": 73, "HPI": True},
+    normalize_percentile: Tuple[float, float] = (0.925, 0.975),
+    Base_dB: float = 73,
+    Max_dB: float = 86,
+    HPI: bool = True,
 ):
-    # assume spectrogram is well normalize
-    # it means, overall average Human Perceptual Intensity set 0dB
+    # spectrogram follows the shape [freq, time, 2]
+    # assume spectrogram is well normalize to 0dB
+    # in this case it will Amplitude to {Base_dB}dB
+    # but limit upto {Max_dB}dB
+
+    assert spectrogram.shape[-1] == 2 and len(spectrogram.shape) == 3
+
+    p_low, p_upp = normalize_percentile
+    assert 0 <= p_low <= 1
+    assert 0 <= p_upp <= 1
+    target_norm = (norm_integral(p_upp) - norm_integral(p_low)) / (p_upp - p_low)
+
+    spectrogram = spectrogram[..., 0] + 1j * spectrogram[..., 1]
+    frequencies = scipy.fft.rfftfreq(spectrogram.shape[0] * 2 - 1, 1 / samplerate)
+    if HPI:
+        s_HPI = abs(spectrogram).sum(axis=0)
+        spectrogram /= get_sri(tuple(frequencies))[..., None]
+    else:
+        s_HPI = (abs(spectrogram) * get_sri(tuple(frequencies))[..., None]).sum(axis=0)
+
+    idx_low, idx_upp = [int(len(s_HPI) * x) for x in [p_low, p_upp]]
+    current_norm = np.partition(s_HPI, [idx_low, idx_upp])[idx_low : idx_upp + 1].mean()
+
+    EXP_AMP = np.log10(current_norm / target_norm + 1e-9) * 10
+    if EXP_AMP > Max_dB - Base_dB:
+        warnings.warn(
+            f"The spectrogram has been boosted by {EXP_AMP:.2f}dB than expected."
+            " Automatically adjusts the intensity."
+        )
+    AMP = min(Base_dB, Max_dB - EXP_AMP)
+    r_times, r_samples = scipy.signal.istft(spectrogram, samplerate)
+    r_samples *= 10 ** (AMP / 10)
 
     info = np.iinfo(dtype)
-    # spectrogram = spectrogram-spectrogram.mean(axis = (0, 1), keepdims = True)
-    spectrogram = spectrogram[..., 0] + 1j * spectrogram[..., 1]
-    if normalize_target_option["HPI"]:
-        frequencies = scipy.fft.rfftfreq(spectrogram.shape[0] * 2 - 1, 1 / samplerate)
-        spectrogram /= get_sri(tuple(frequencies))[..., None]
-    r_times, r_samples = scipy.signal.istft(spectrogram, samplerate)
-    r_samples *= 10 ** (normalize_target_option["AMP"] / 10)
     data = np.clip(r_samples, info.min, info.max)
     data = data.astype(dtype)
     return data
