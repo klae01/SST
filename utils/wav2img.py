@@ -57,11 +57,14 @@ def wav2pfft(
     target_norm = (norm_integral(p_upp) - norm_integral(p_low)) / (p_upp - p_low)
 
     samplerate, samples = wav.read(file)
+    if len(samples.shape) > 1:
+        samples = samples[..., 0]
     if virtual_samplerate is not None and virtual_samplerate != samplerate:
         samples = scipy.signal.resample(
             samples, len(samples) * virtual_samplerate // samplerate
         )
         samplerate = virtual_samplerate
+
     frequencies, times, spectrogram = scipy.signal.stft(
         samples, samplerate, nperseg=nperseg
     )
@@ -129,17 +132,15 @@ def pfft2wav(
 
 def pfft2img(spectrogram: np.ndarray):
     def as_uint8(X):
-        return np.clip(X * 255 + 0.5, 0, 255).astype(np.uint8)
+        return np.clip(X * 256, 0, 255).astype(np.uint8)
 
-    # img = spectrogram-spectrogram.mean(axis = (0, 1), keepdims = True)
     img = spectrogram
-    scale = np.linalg.norm(img, ord=2, axis=-1)
-    scale /= scale.max()
+    scale = np.linalg.norm(img, ord=2, axis=-1, keepdims=True)
 
-    rate = img / abs(img).sum(axis=-1, keepdims=True)
-    img = rate * scale[..., None]
-    img = as_uint8((img + 1) / 2)
-    img = np.concatenate([as_uint8(scale)[..., None], img], axis=-1)
+    AMP = scale / (scale.max() + 1e-6)
+    img_ab = img * (AMP / (scale + 1e-6))
+    img = np.concatenate([AMP, (img_ab + 1) / 2], axis=-1)
+    img = as_uint8(img)
     img = cv2.cvtColor(img, cv2.COLOR_LAB2RGB)
     return img
 
