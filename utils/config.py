@@ -55,9 +55,13 @@ class config:
     normalize_percentile: Tuple[float, float] = (0.925, 0.975)
 
     # pfft2wav config
-    Base_HPI_dB: float = 93  # global AMP value
-    Max_HPI_dB: float = 102  # global AMP max value limit
-    Max_dB: float = 96  # local AMP truncation
+    wav_dtype: np.dtype = np.int32
+    Base_HPI_dB: float = 87  # global AMP value
+    Max_HPI_dB: float = 96  # global AMP max value limit
+    Max_dB: float = 92  # local AMP truncation
+
+    # global config
+    verbose: bool = True
 
     def __get_freq(self, nperseg):
         frequencies = scipy.fft.rfftfreq(nperseg, 1 / self.samplerate)
@@ -88,6 +92,14 @@ class config:
                 l = m + 1
         return r
 
+    @property
+    def raw_f_size(self):
+        # f_size for reconstruct FFT matrix for istft
+        return len(self.__get_freq(self.nperseg))
+    @property
+    def f_index(self):
+        return np.asarray(self.__f_index(self.nperseg))
+    
     @property
     def frequencies(self):
         return self.__get_freq(self.nperseg)[np.asarray(self.__f_index(self.nperseg))]
