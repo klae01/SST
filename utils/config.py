@@ -32,36 +32,70 @@ def get_sri(frequencies):  # sound recognition intensity
     sri = 10 ** ((iso226_base - sri) / 10)
     return sri
 
+
 def norm_integral(p):
     # integrate Z_score(p) dp
     return -np.exp(-scipy.special.erfinv(2 * p - 1) ** 2) / (np.pi * 2) ** 0.5
 
 
 class config:
-    # Dataset config
+    """_summary_
+    1. global config
+        f_size (int): refers to the resolution of the frequency. Defaults to 512.
+        f_range (Tuple[float, float]): refers to the frequency range (Hz). Defaults to (20, 17000).
+        verbose (bool): If True, make some warnings if need. Defaults to True.
+        samplerate (int): Normalize wav file sample rate. Defaults to 48000.
+        axis (str): Defines the axis order. F is frequency, T is time, C is channel (Real and Imag). Defaults to "FTC".
+        HPI (bool): Frequency rescaled by Human Perception Intensity.  Defaults to False.
+        normalize_percentile (Tuple[float, float]): Declare the scope of a sampling group for normalization. Defaults to (0.925, 0.975).
+
+    2. Dataset config
+        t_size (int): refers to the time length. Defaults to 1024.
+        use_numpy (bool): If True, serve data with numpy array. Otherwise, it is provided as a torch.Tensor . Defaults to True.
+        serve_dtype (str): dtype of serving. Defaults to None.
+        device (str): only if `use_numpy=False`, configure to where tensor is placed. Defaults to None.
+
+    3. post-processing (revert to wav) config
+        wav_dtype (np.dtype): wav file save dtype. Defaults to np.int32.
+        Base_HPI_dB (float):global AMP value. Defaults to 87.
+        Max_HPI_dB (float): global AMP max value limit. Defaults to 96.
+        Max_dB (float): local AMP truncation. Defaults to 92.
+
+
+    ============================
+
+    Available torch.dtypes:
+        https://pytorch.org/docs/stable/tensors.html
+
+        The following are valid cases:
+            dtype="float32" # for numpy
+            dtype="torch.bfloat16" # for torch
+            dtype="torch.float" # for torch
+
+    Available torch device names:
+        https://github.com/pytorch/pytorch/blob/7b8cf1f7366bff95e9954037a58a8bb0edaaebd3/c10/core/Device.cpp#L52
+    """
+
+    # global config
     f_size: int = 512
-    t_size: int = 1024
-    f_range: Tuple[float, float] = [20, 17000]  # term in Hz
-
-    use_numpy: bool = True
-    return_dtype: str = None
-    device: str = None
-
-    # pre/post processing config
+    f_range: Tuple[float, float] = (20, 17000)
+    verbose: bool = True
     samplerate: int = 48000
     axis: str = "FTC"
     HPI: bool = False
-
     normalize_percentile: Tuple[float, float] = (0.925, 0.975)
+
+    # Dataset config
+    t_size: int = 1024
+    use_numpy: bool = True
+    serve_dtype: str = None
+    device: str = None
 
     # pfft2wav config
     wav_dtype: np.dtype = np.int32
-    Base_HPI_dB: float = 87  # global AMP value
-    Max_HPI_dB: float = 96  # global AMP max value limit
-    Max_dB: float = 92  # local AMP truncation
-
-    # global config
-    verbose: bool = True
+    Base_HPI_dB: float = 87
+    Max_HPI_dB: float = 96
+    Max_dB: float = 92
 
     def __get_freq(self, nperseg):
         frequencies = scipy.fft.rfftfreq(nperseg, 1 / self.samplerate)
@@ -96,10 +130,11 @@ class config:
     def raw_f_size(self):
         # f_size for reconstruct FFT matrix for istft
         return len(self.__get_freq(self.nperseg))
+
     @property
     def f_index(self):
         return np.asarray(self.__f_index(self.nperseg))
-    
+
     @property
     def frequencies(self):
         return self.__get_freq(self.nperseg)[np.asarray(self.__f_index(self.nperseg))]
@@ -119,3 +154,5 @@ class config:
         for K, V in kwargs.items():
             assert hasattr(self, K)
             setattr(self, K, V)
+
+        assert not self.use_numpy or self.device is None

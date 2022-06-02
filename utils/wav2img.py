@@ -29,16 +29,16 @@ def inner_to_complex(data: np.ndarray):
 def __axis_inner(data: np.ndarray, axis: str):
     # Reverts from the outer axis order specified in the config to the inner axis order.
     assert Counter("FTC") == Counter(axis)
-    axis_order = dict(map(reversed, enumerate("FTC")))
-    axis_order = [axis_order[I] for I in axis]
+    axis_order = dict(map(reversed, enumerate(axis)))
+    axis_order = [axis_order[I] for I in "FTC"]
     return data.transpose(axis_order)
 
 
 def __axis_outer(data: np.ndarray, axis: str):
     # Convert to the axis order required by config from inner axis order.
     assert Counter("FTC") == Counter(axis)
-    axis_order = dict(map(reversed, enumerate(axis)))
-    axis_order = [axis_order[I] for I in "FTC"]
+    axis_order = dict(map(reversed, enumerate("FTC")))
+    axis_order = [axis_order[I] for I in axis]
     return data.transpose(axis_order)
 
 
